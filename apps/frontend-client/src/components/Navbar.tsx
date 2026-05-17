@@ -12,8 +12,9 @@ export default function Navbar() {
   const notInstalled = connection.status === 'not_installed';
 
   function shortAddress(addr: string) {
-    if (addr.length <= 12) return addr;
-    return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+    const s = String(addr);
+    if (s.length <= 12) return s;
+    return `${s.slice(0, 6)}…${s.slice(-4)}`;
   }
 
   return (

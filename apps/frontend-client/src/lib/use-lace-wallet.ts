@@ -106,18 +106,25 @@ export function useLaceWallet() {
 
     try {
       // v4 API: connect(networkId) → ConnectedAPI
-      const connectedApi = await lace.connect(NETWORK_ID);
-
-      // Prefer dust address as the display address (it's always available)
-      let address = '';
-      try { address = await connectedApi.getDustAddress(); } catch { /* ignore */ }
-      if (!address) {
-        try { address = await connectedApi.getUnshieldedAddress(); } catch { /* ignore */ }
+      // Fall back to old v1 API (enable()) for users on older Lace versions
+      let connectedApi: ConnectedAPI;
+      if (typeof (lace as unknown as Record<string, unknown>)['connect'] === 'function') {
+        connectedApi = await lace.connect(NETWORK_ID);
+      } else {
+        // Old v1 API
+        connectedApi = await (lace as unknown as { enable: () => Promise<ConnectedAPI> }).enable();
       }
-      if (!address) {
+
+      // getDustAddress / getUnshieldedAddress may return Bech32m objects — coerce to string
+      let address = '';
+      try { address = String(await connectedApi.getDustAddress()); } catch { /* ignore */ }
+      if (!address || address === 'undefined') {
+        try { address = String(await connectedApi.getUnshieldedAddress()); } catch { /* ignore */ }
+      }
+      if (!address || address === 'undefined') {
         try {
           const s = await connectedApi.getShieldedAddresses();
-          address = s.shieldedAddress;
+          address = String(s?.shieldedAddress ?? '');
         } catch { /* ignore */ }
       }
 
