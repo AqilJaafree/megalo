@@ -6,6 +6,12 @@ Borrowers prove creditworthiness with zero-knowledge proofs — lenders see grad
 
 ---
 
+## Demo
+
+https://github.com/user-attachments/assets/bb6d8afa-c88c-472b-b013-3de6d752343d
+
+---
+
 ## How it works
 
 ```
