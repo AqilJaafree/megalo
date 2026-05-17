@@ -1,37 +1,135 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { CreditFeatures, CreditProofOutput, DocumentSource } from '@/types';
 
-const STEPS = [
-  { label: 'Parsing documents', duration: 1500 },
-  { label: 'Analysing credit features', duration: 2000 },
-  { label: 'Generating ZK proof', duration: 2500 },
-  { label: 'Proof verified on-chain', duration: 800 },
+const STEP_LABELS = [
+  'Parsing documents',
+  'Analysing credit features',
+  'Generating ZK proof',
+  'Proof verified on-chain',
 ];
+
+function toQuality(score: number): 'High' | 'Good' | 'Moderate' | 'Low' {
+  if (score >= 75) return 'High';
+  if (score >= 55) return 'Good';
+  if (score >= 35) return 'Moderate';
+  return 'Low';
+}
+
+function mergeFeatures(extractions: CreditFeatures[]): CreditFeatures {
+  return {
+    avgMonthlyIncomeScore:   Math.max(...extractions.map(e => e.avgMonthlyIncomeScore)),
+    debtRatioScore:          Math.max(...extractions.map(e => e.debtRatioScore)),
+    paymentHistoryScore:     Math.max(...extractions.map(e => e.paymentHistoryScore)),
+    cashflowVolatilityScore: Math.max(...extractions.map(e => e.cashflowVolatilityScore)),
+    creditUtilisationScore:  Math.max(...extractions.map(e => e.creditUtilisationScore)),
+    assetSufficiencyScore:   Math.max(...extractions.map(e => e.assetSufficiencyScore)),
+  };
+}
 
 export default function VerifyPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const ran = useRef(false);
 
   useEffect(() => {
-    let stepIndex = 0;
-    const runSteps = () => {
-      if (stepIndex >= STEPS.length) {
-        setTimeout(() => router.push('/borrow/score'), 600);
-        return;
+    if (ran.current) return;
+    ran.current = true;
+
+    const run = async () => {
+      try {
+        const raw = sessionStorage.getItem('megalo_upload_files');
+        const uploads: { base64: string; name: string; source: DocumentSource }[] =
+          raw ? JSON.parse(raw) : [];
+
+        // Step 0: Parse documents
+        setCurrentStep(0);
+        let features: CreditFeatures;
+        if (uploads.length > 0) {
+          const results = await Promise.all(
+            uploads.map(({ base64, source }) =>
+              fetch('/api/ai/parse-document', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ base64, source }),
+              }).then(r => r.json() as Promise<CreditFeatures>),
+            ),
+          );
+          setCompletedSteps([0]);
+
+          // Step 1: Merge features
+          setCurrentStep(1);
+          features = results.length === 1 ? results[0] : mergeFeatures(results);
+          await new Promise(r => setTimeout(r, 600));
+          setCompletedSteps([0, 1]);
+        } else {
+          // No files — use neutral defaults (demo fallback)
+          features = {
+            avgMonthlyIncomeScore: 70,
+            debtRatioScore: 68,
+            paymentHistoryScore: 75,
+            cashflowVolatilityScore: 60,
+            creditUtilisationScore: 72,
+            assetSufficiencyScore: 50,
+          };
+          setCompletedSteps([0, 1]);
+        }
+
+        // Step 2: Generate ZK proof
+        setCurrentStep(2);
+        const proofRes = await fetch('/api/contract/prove-credit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ features, attested: false }),
+        });
+        const proof = await proofRes.json() as CreditProofOutput;
+        if (!proofRes.ok) throw new Error((proof as unknown as { error: string }).error ?? 'Proof failed');
+        setCompletedSteps([0, 1, 2]);
+
+        // Step 3: On-chain confirmation (brief UX delay)
+        setCurrentStep(3);
+        await new Promise(r => setTimeout(r, 800));
+        setCompletedSteps([0, 1, 2, 3]);
+
+        // Store results for score page
+        sessionStorage.setItem('megalo_proof_result', JSON.stringify(proof));
+        sessionStorage.setItem('megalo_features', JSON.stringify(features));
+
+        await new Promise(r => setTimeout(r, 500));
+        router.push('/borrow/score');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
       }
-      setCurrentStep(stepIndex);
-      setTimeout(() => {
-        setCompletedSteps(prev => [...prev, stepIndex]);
-        stepIndex++;
-        runSteps();
-      }, STEPS[stepIndex].duration);
     };
-    runSteps();
+
+    run();
   }, [router]);
+
+  if (error) {
+    return (
+      <main className="min-h-screen bg-[#120F17] text-white flex flex-col">
+        <Navbar />
+        <div style={{ height: '80px' }} />
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="w-full max-w-md text-center">
+            <p className="text-red-400 font-medium mb-2">Verification failed</p>
+            <p className="text-white/40 text-sm mb-6">{error}</p>
+            <button
+              onClick={() => router.push('/borrow/upload')}
+              className="text-[#9aab82] text-sm underline"
+            >
+              Go back and try again
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#120F17] text-white flex flex-col">
@@ -61,7 +159,7 @@ export default function VerifyPage() {
           </div>
 
           <div className="space-y-3">
-            {STEPS.map((step, i) => {
+            {STEP_LABELS.map((label, i) => {
               const isDone = completedSteps.includes(i);
               const isActive = currentStep === i && !isDone;
               return (
@@ -91,7 +189,7 @@ export default function VerifyPage() {
                     )}
                   </div>
                   <span className={`text-sm font-medium flex-1 ${isDone ? 'text-[#9aab82]' : isActive ? 'text-white' : 'text-white/30'}`}>
-                    {step.label}
+                    {label}
                   </span>
                   {isActive && <span className="text-xs text-[#7b8866] animate-pulse">Processing…</span>}
                   {isDone && <span className="text-xs text-[#7b8866]/60">Done</span>}

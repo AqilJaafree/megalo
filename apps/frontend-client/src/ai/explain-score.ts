@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { CreditGrade, ScoreExplanation } from '../types';
 import { ANTHROPIC_MODEL } from '../config';
 
-const client = new Anthropic();
+const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
 const SYSTEM_PROMPT = `You are writing a short, clear explanation of a borrower's credit score for Midvault.
 Output a JSON object with exactly these keys:

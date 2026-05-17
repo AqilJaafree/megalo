@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { CreditFeatures, DocumentSource } from '../types';
 import { ANTHROPIC_MODEL, DEFAULT_ASSET_SCORE } from '../config';
 
-const client = new Anthropic();
+const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
 function buildSystemPrompt(source: DocumentSource): string {
   const sourceHints: Record<DocumentSource, string> = {

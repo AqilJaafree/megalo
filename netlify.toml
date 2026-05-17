@@ -2,28 +2,19 @@
 # Docs: https://docs.netlify.com/configure-builds/file-based-configuration/
 
 [build]
-  # Monorepo: build from the frontend package
-  base    = "apps/frontend-client"
-  command = "pnpm run build"
-  publish = ".next"
+  # Build from repo root so pnpm installs all workspace packages correctly
+  base    = "."
+  command = "pnpm install --frozen-lockfile && pnpm --filter frontend-client run build"
+  publish = "apps/frontend-client/.next"
 
-  # pnpm must be available; Netlify has it by default since Node 18
   [build.environment]
-    NODE_VERSION    = "20"
-    PNPM_VERSION    = "9.0.0"
-    # Tell Next.js where the monorepo root is so file tracing works correctly
-    NEXT_PRIVATE_STANDALONE = "true"
+    NODE_VERSION = "20"
+    PNPM_VERSION = "9.0.0"
 
 # Netlify's Next.js runtime handles API routes, Server Components, and ISR.
 # It is installed automatically when Netlify detects a Next.js project.
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# Redirect everything to Next.js — the plugin handles this, but belt-and-suspenders.
-[[redirects]]
-  from   = "/*"
-  to     = "/.netlify/functions/___netlify-handler"
-  status = 200
 
 # ─── Environment variables ────────────────────────────────────────────────────
 # Set these in the Netlify UI under Site → Environment variables.
@@ -38,7 +29,7 @@
 #   GOVERNANCE_ADDRESS            = <deployed address>
 #   CREDIT_PROOF_ADDRESS          = <deployed address>
 #   ASSET_PROOF_ADDRESS           = <deployed address>
-#   ANTHROPIC_API_KEY             = sk-ant-...
+#   CLAUDE_API_KEY                = sk-ant-...
 #
 # Optional (open banking):
 #   PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV

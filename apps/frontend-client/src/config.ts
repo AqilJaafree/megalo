@@ -25,7 +25,7 @@ export const CONTRACT_ADDRESSES = {
   assetProof:  process.env.ASSET_PROOF_ADDRESS ?? '',
 };
 
-export const ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+export const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
 
 // Grade → APR band in basis points — two sets: attested vs standard
 // Must mirror grade_rate_band() in lending_pool.compact exactly
