@@ -38,6 +38,18 @@ export ledger governors:           Set<Bytes<32>>;
 // Private: governor identity and block height (prover-supplied off-chain)
 witness local_secret_key(): Bytes<32>;
 witness current_block(): Uint<64>;
+witness initial_threshold(): Uint<8>;
+
+constructor() {
+  const sk      = local_secret_key();
+  const gov_key = persistentHash<Vector<2, Bytes<32>>>([pad(32, "midvault:gov:"), sk]);
+  governors.insert(disclose(gov_key));
+  multisig_threshold = disclose(initial_threshold());
+  credit_weights = CreditWeights {
+    income: 20 as Uint<8>, debt: 20 as Uint<8>, payments: 20 as Uint<8>,
+    cashflow: 15 as Uint<8>, utilisation: 15 as Uint<8>, assets: 10 as Uint<8>,
+  };
+}
 
 pure circuit derive_gov_key(sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midvault:gov:"), sk]);

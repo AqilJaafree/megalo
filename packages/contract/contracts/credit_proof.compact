@@ -20,6 +20,14 @@ export ledger attestations:  Map<Bytes<32>, Boolean>;
 // Weights are managed by governance contract; initialised at deploy
 export ledger credit_weights: CreditWeights;
 
+// Deployer provides initial weights at deploy time
+witness initial_income():      Uint<8>;
+witness initial_debt():        Uint<8>;
+witness initial_payments():    Uint<8>;
+witness initial_cashflow():    Uint<8>;
+witness initial_utilisation(): Uint<8>;
+witness initial_assets():      Uint<8>;
+
 // Private inputs — normalised by Claude off-chain, never leave the prover
 witness local_secret_key():      Bytes<32>;
 witness get_income_score():      Uint<64>;
@@ -28,6 +36,17 @@ witness get_payments_score():    Uint<64>;
 witness get_cashflow_score():    Uint<64>;
 witness get_utilisation_score(): Uint<64>;
 witness get_assets_score():      Uint<64>;
+
+constructor() {
+  credit_weights = CreditWeights {
+    income:      disclose(initial_income()),
+    debt:        disclose(initial_debt()),
+    payments:    disclose(initial_payments()),
+    cashflow:    disclose(initial_cashflow()),
+    utilisation: disclose(initial_utilisation()),
+    assets:      disclose(initial_assets()),
+  };
+}
 
 pure circuit derive_pk(sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midvault:pk:"), sk]);

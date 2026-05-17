@@ -9,23 +9,33 @@ build
 artifacts
 .next
 out
+*.tsbuildinfo
 
-# Compact compiler output (regenerate with: compact compile)
+# Compact compiler output (regenerate with: pnpm --filter contract build)
 packages/contract/managed/
+
+# Compact compiler binary (installed locally by compactc installer)
+x86_64-unknown-linux-musl
+x86_64-unknown-linux-musl/
+
+# LevelDB private state store (created by deploy script)
+packages/contract/midnight-level-db/
 
 # turbo
 .turbo
 
-# env
+# env — contains deployed contract addresses, never commit
 .env
 .env.local
 .env.*.local
+*.env
 
 # misc
 .DS_Store
 *.pem
 *.log
 
-#.claude
+# Claude Code
 .claude
 .claude-plugin
+.mcp.json
