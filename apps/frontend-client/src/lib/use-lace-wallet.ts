@@ -1,75 +1,128 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
-// Midnight DApp connector injected by Lace wallet extension
-// https://docs.midnight.network/develop/tutorial/using/implement-ui/#connect-to-the-wallet
-interface MidnightLaceAPI {
-  apiVersion: string;
-  enable: () => Promise<EnabledAPI>;
-  isEnabled: () => Promise<boolean>;
-  name: string;
-  icon: string;
+// ── DApp Connector API types (v4.x) ──────────────────────────────────────────
+// https://docs.midnight.network/api-reference/dapp-connector
+
+interface ServiceUriConfig {
+  indexerUri: string;
+  indexerWsUri: string;
+  proverServerUri: string;
+  substrateNodeUri: string;
+  networkId: string;
 }
 
-interface EnabledAPI {
-  state: () => Promise<WalletState>;
-  balanceTransaction: (tx: unknown) => Promise<unknown>;
+interface ConnectedAPI {
+  getConnectionStatus: () => Promise<{ networkId: string }>;
+  getConfiguration: () => Promise<ServiceUriConfig>;
+  getDustAddress: () => Promise<string>;
+  getShieldedAddresses: () => Promise<{ shieldedAddress: string }>;
+  getUnshieldedAddress: () => Promise<string>;
+  balanceUnsealedTransaction: (tx: unknown) => Promise<{ tx: unknown }>;
+  balanceSealedTransaction: (tx: unknown) => Promise<unknown>;
   submitTransaction: (tx: unknown) => Promise<string>;
 }
 
-interface WalletState {
-  coinPublicKey?: string;
-  encryptionPublicKey?: string;
-  address?: string;
+interface InitialAPI {
+  name: string;
+  icon: string;
+  apiVersion: string;
+  connect: (networkId: string) => Promise<ConnectedAPI>;
 }
 
 declare global {
   interface Window {
-    midnight?: {
-      mnLace?: MidnightLaceAPI;
-    };
+    midnight?: Record<string, InitialAPI>;
   }
 }
+
+// Use NEXT_PUBLIC_ prefix so this is available in the browser bundle
+const NETWORK_ID =
+  process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK_ID ?? 'undeployed';
 
 export type LaceConnectionState =
   | { status: 'disconnected' }
   | { status: 'connecting' }
-  | { status: 'connected'; address: string; coinPublicKey: string }
+  | { status: 'connected'; address: string }
   | { status: 'not_installed' }
   | { status: 'error'; message: string };
 
+function findLace(): InitialAPI | undefined {
+  const mn = window.midnight;
+  if (!mn) return undefined;
+  // Prefer mnLace, fall back to any available wallet
+  return mn['mnLace'] ?? Object.values(mn)[0];
+}
+
 export function useLaceWallet() {
   const [connection, setConnection] = useState<LaceConnectionState>({ status: 'disconnected' });
-  const [api, setApi] = useState<EnabledAPI | null>(null);
+  const [api, setApi] = useState<ConnectedAPI | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Poll for the extension for up to 5 seconds after mount
   useEffect(() => {
-    // Give the extension time to inject
-    const timer = setTimeout(() => {
-      if (!window.midnight?.mnLace) {
+    let attempts = 0;
+    const MAX = 25; // 25 × 200 ms = 5 s
+
+    pollRef.current = setInterval(() => {
+      attempts++;
+      if (findLace()) {
+        clearInterval(pollRef.current!);
+        // Found — reset not_installed if it was set, stay disconnected otherwise
+        setConnection(prev =>
+          prev.status === 'not_installed' ? { status: 'disconnected' } : prev,
+        );
+        return;
+      }
+      if (attempts >= MAX) {
+        clearInterval(pollRef.current!);
         setConnection({ status: 'not_installed' });
       }
-    }, 1000);
-    return () => clearTimeout(timer);
+    }, 200);
+
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
   const connect = useCallback(async () => {
     setConnection({ status: 'connecting' });
 
-    if (!window.midnight?.mnLace) {
+    // Re-poll briefly in case user just installed the extension
+    if (!findLace()) {
+      await new Promise<void>(resolve => {
+        let n = 0;
+        const t = setInterval(() => {
+          n++;
+          if (findLace() || n >= 15) { clearInterval(t); resolve(); }
+        }, 200);
+      });
+    }
+
+    const lace = findLace();
+    if (!lace) {
       setConnection({ status: 'not_installed' });
       return;
     }
 
     try {
-      const enabledApi = await window.midnight.mnLace.enable();
-      const state = await enabledApi.state();
-      setApi(enabledApi);
-      setConnection({
-        status: 'connected',
-        address: state.address ?? state.coinPublicKey ?? 'unknown',
-        coinPublicKey: state.coinPublicKey ?? '',
-      });
+      // v4 API: connect(networkId) → ConnectedAPI
+      const connectedApi = await lace.connect(NETWORK_ID);
+
+      // Prefer dust address as the display address (it's always available)
+      let address = '';
+      try { address = await connectedApi.getDustAddress(); } catch { /* ignore */ }
+      if (!address) {
+        try { address = await connectedApi.getUnshieldedAddress(); } catch { /* ignore */ }
+      }
+      if (!address) {
+        try {
+          const s = await connectedApi.getShieldedAddresses();
+          address = s.shieldedAddress;
+        } catch { /* ignore */ }
+      }
+
+      setApi(connectedApi);
+      setConnection({ status: 'connected', address: address || 'connected' });
     } catch (err) {
       setConnection({
         status: 'error',
