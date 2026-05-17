@@ -1,0 +1,200 @@
+pragma language_version >= 0.16 && <= 0.23;
+
+import CompactStandardLibrary;
+
+export struct CreditWeights {
+  income:      Uint<8>,
+  debt:        Uint<8>,
+  payments:    Uint<8>,
+  cashflow:    Uint<8>,
+  utilisation: Uint<8>,
+  assets:      Uint<8>,
+}
+
+export struct Loan {
+  borrower_grade: Uint<8>,
+  principal:      Uint<64>,
+  apr_bps:        Uint<16>,
+  term_months:    Uint<8>,
+  disbursed_at:   Uint<64>,
+  repaid:         Boolean,
+  defaulted:      Boolean,
+  score_hash:     Bytes<32>,
+  attested:       Boolean,
+}
+
+// Pool state
+export ledger total_liquidity: Uint<64>;
+export ledger total_lent:      Uint<64>;
+
+// Loans keyed by loan_id = persistentHash(score_hash, principal_bytes, block_bytes)
+export ledger loans: Map<Bytes<32>, Loan>;
+
+// Governance
+export ledger credit_weights:      CreditWeights;
+export ledger multisig_threshold:  Uint<8>;
+export ledger governors:           Set<Bytes<32>>;
+
+// Private: governor identity and block height (prover-supplied off-chain)
+witness local_secret_key(): Bytes<32>;
+witness current_block(): Uint<64>;
+
+pure circuit derive_gov_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midvault:gov:"), sk]);
+}
+
+// Returns true if apr_bps is within the grade+attestation band.
+// Attested borrowers get tighter (lower) ceilings.
+//   Attested — A: 3.5–6.5%  B: 6.5–9.5%   C:  9.5–13%
+//   Standard  — A: 5–8%     B: 8–11%      C: 11–15%
+pure circuit rate_in_band(
+  grade:   Uint<8>,
+  att:     Boolean,
+  apr_bps: Uint<16>,
+): Boolean {
+  if (att) {
+    if (grade == 1) {
+      if (apr_bps >= 350) { return apr_bps <= 650;  }
+      return false;
+    }
+    if (grade == 2) {
+      if (apr_bps >= 650) { return apr_bps <= 950;  }
+      return false;
+    }
+    if (apr_bps >= 950) { return apr_bps <= 1300; }
+    return false;
+  } else {
+    if (grade == 1) {
+      if (apr_bps >= 500) { return apr_bps <= 800;  }
+      return false;
+    }
+    if (grade == 2) {
+      if (apr_bps >= 800) { return apr_bps <= 1100; }
+      return false;
+    }
+    if (apr_bps >= 1100) { return apr_bps <= 1500; }
+    return false;
+  }
+}
+
+// Grace period: approx 2 592 000 blocks per month (30d × 86 400 blocks/day)
+pure circuit is_past_due(loan: Loan, now: Uint<64>): Boolean {
+  const months64    = loan.term_months as Uint<64>;
+  const term_blocks = (months64 * 2592000) as Uint<64>;
+  const due_at      = (loan.disbursed_at + term_blocks) as Uint<64>;
+  return now > due_at;
+}
+
+export circuit deposit_liquidity(amount: Uint<64>): [] {
+  assert(disclose(amount > 0), "Amount must be positive");
+  total_liquidity = (total_liquidity + disclose(amount)) as Uint<64>;
+}
+
+export circuit request_loan(
+  grade:       Uint<8>,
+  is_eligible: Boolean,
+  score_hash:  Bytes<32>,
+  attested:    Boolean,
+  principal:   Uint<64>,
+  apr_bps:     Uint<16>,
+  term_months: Uint<8>,
+): Bytes<32> {
+  const d_grade   = disclose(grade);
+  const d_elig    = disclose(is_eligible);
+  const d_hash    = disclose(score_hash);
+  const d_att     = disclose(attested);
+  const d_prin    = disclose(principal);
+  const d_apr     = disclose(apr_bps);
+  const d_term    = disclose(term_months);
+
+  assert(d_elig,                              "Borrower not eligible");
+  assert(d_grade >= 1,                        "Invalid grade (low)");
+  assert(d_grade <= 3,                        "Invalid grade (high)");
+  assert(d_prin > 0,                          "Principal must be positive");
+  assert(d_prin <= total_liquidity,           "Insufficient pool liquidity");
+  assert(d_term >= 1,                         "Term too short");
+  assert(d_term <= 60,                        "Term exceeds 60 months");
+  assert(rate_in_band(d_grade, d_att, d_apr), "APR outside allowed band");
+
+  const block       = disclose(current_block());
+  const block_bytes = (block as Field) as Bytes<32>;
+  const prin_bytes  = (d_prin as Field) as Bytes<32>;
+  const loan_id     = persistentHash<Vector<3, Bytes<32>>>([
+    d_hash, prin_bytes, block_bytes,
+  ]);
+
+  loans.insert(loan_id, Loan {
+    borrower_grade: d_grade,
+    principal:      d_prin,
+    apr_bps:        d_apr,
+    term_months:    d_term,
+    disbursed_at:   block,
+    repaid:         false,
+    defaulted:      false,
+    score_hash:     d_hash,
+    attested:       d_att,
+  });
+
+  total_liquidity = (total_liquidity - d_prin) as Uint<64>;
+  total_lent      = (total_lent      + d_prin) as Uint<64>;
+
+  return loan_id;
+}
+
+export circuit repay_loan(loan_id: Bytes<32>, amount: Uint<64>): [] {
+  const d_id     = disclose(loan_id);
+  const d_amount = disclose(amount);
+
+  assert(loans.member(d_id), "Loan not found");
+  const loan = loans.lookup(d_id);
+
+  assert(!loan.repaid,              "Already repaid");
+  assert(!loan.defaulted,           "Loan in default");
+  assert(d_amount >= loan.principal, "Amount below principal");
+
+  loans.insert(d_id, Loan {
+    borrower_grade: loan.borrower_grade,
+    principal:      loan.principal,
+    apr_bps:        loan.apr_bps,
+    term_months:    loan.term_months,
+    disbursed_at:   loan.disbursed_at,
+    repaid:         true,
+    defaulted:      false,
+    score_hash:     loan.score_hash,
+    attested:       loan.attested,
+  });
+
+  total_liquidity = (total_liquidity + d_amount)    as Uint<64>;
+  total_lent      = (total_lent      - loan.principal) as Uint<64>;
+}
+
+export circuit mark_default(loan_id: Bytes<32>): [] {
+  const sk       = local_secret_key();
+  const caller   = derive_gov_key(sk);
+  const d_caller = disclose(caller);
+  assert(governors.member(d_caller), "Not a governor");
+
+  const d_id = disclose(loan_id);
+  assert(loans.member(d_id), "Loan not found");
+  const loan = loans.lookup(d_id);
+
+  assert(!loan.repaid,    "Already repaid");
+  assert(!loan.defaulted, "Already defaulted");
+
+  const now = disclose(current_block());
+  assert(is_past_due(loan, now), "Loan not yet past due");
+
+  loans.insert(d_id, Loan {
+    borrower_grade: loan.borrower_grade,
+    principal:      loan.principal,
+    apr_bps:        loan.apr_bps,
+    term_months:    loan.term_months,
+    disbursed_at:   loan.disbursed_at,
+    repaid:         false,
+    defaulted:      true,
+    score_hash:     loan.score_hash,
+    attested:       loan.attested,
+  });
+
+  total_lent = (total_lent - loan.principal) as Uint<64>;
+}

@@ -1,0 +1,52 @@
+pragma language_version >= 0.16 && <= 0.23;
+
+import CompactStandardLibrary;
+
+// Public proof outputs — keyed by borrower's derived public key
+export ledger asset_sufficient: Map<Bytes<32>, Boolean>;
+export ledger asset_tiers:      Map<Bytes<32>, Uint<8>>;
+
+// Private inputs — from brokerage/pension/property docs normalised by Claude
+witness local_secret_key():         Bytes<32>;
+witness get_liquid_assets_usd():    Uint<64>;
+witness get_illiquid_assets_usd():  Uint<64>;
+witness get_loan_amount_usd():      Uint<64>;
+
+pure circuit derive_pk(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midvault:pk:"), sk]);
+}
+
+// Tier based on combined assets, division avoided by doubling:
+//   liquid + illiquid/2 >= 250 000  ⟺  2×liquid + illiquid >= 500 000  →  tier 3
+//   liquid + illiquid/2 >=  50 000  ⟺  2×liquid + illiquid >= 100 000  →  tier 2
+//   else                                                                 →  tier 1
+pure circuit compute_tier(liquid: Uint<64>, illiquid: Uint<64>): Uint<8> {
+  const doubled   = (liquid + liquid) as Uint<64>;
+  const combined2 = (doubled + illiquid) as Uint<64>;
+  if (combined2 >= 500000) { return 3 as Uint<8>; }
+  if (combined2 >= 100000) { return 2 as Uint<8>; }
+  return 1 as Uint<8>;
+}
+
+export circuit prove_assets(min_liquid_ratio: Uint<8>): [] {
+  const sk       = local_secret_key();
+  const borrower = derive_pk(sk);
+
+  const liquid   = get_liquid_assets_usd();
+  const illiquid = get_illiquid_assets_usd();
+  const loan     = get_loan_amount_usd();
+
+  assert(disclose(loan > 0), "Loan amount must be positive");
+
+  // Ratio check without division:
+  //   liquid / loan >= min_liquid_ratio / 100
+  //   ⟺  liquid × 100 >= loan × min_liquid_ratio
+  const lhs       = (liquid * 100) as Uint<64>;
+  const rhs       = (loan * (min_liquid_ratio as Uint<64>)) as Uint<64>;
+  const sufficient = disclose(lhs >= rhs);
+  const tier       = compute_tier(liquid, illiquid);
+
+  const b = disclose(borrower);
+  asset_sufficient.insert(b, sufficient);
+  asset_tiers.insert(b, disclose(tier));
+}

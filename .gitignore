@@ -10,6 +10,9 @@ artifacts
 .next
 out
 
+# Compact compiler output (regenerate with: compact compile)
+packages/contract/managed/
+
 # turbo
 .turbo
 

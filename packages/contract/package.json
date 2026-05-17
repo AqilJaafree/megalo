@@ -3,8 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "echo \"Add contract build command\"",
-    "test": "echo \"Add contract test command\"",
-    "clean": "rm -rf artifacts dist"
+    "build": "compactc contracts/credit_proof.compact contracts/asset_proof.compact contracts/lending_pool.compact contracts/governance.compact",
+    "test": "midnight-test",
+    "clean": "rm -rf managed dist"
   }
 }

@@ -1,0 +1,131 @@
+pragma language_version >= 0.16 && <= 0.23;
+
+import CompactStandardLibrary;
+
+export struct CreditWeights {
+  income:      Uint<8>,
+  debt:        Uint<8>,
+  payments:    Uint<8>,
+  cashflow:    Uint<8>,
+  utilisation: Uint<8>,
+  assets:      Uint<8>,
+}
+
+export struct WeightProposal {
+  new_weights:     CreditWeights,
+  rationale_hash:  Bytes<32>,
+  approval_count:  Uint<8>,
+  executed:        Boolean,
+}
+
+// Governance state
+export ledger governors:          Set<Bytes<32>>;
+export ledger multisig_threshold: Uint<8>;
+export ledger proposals:          Map<Bytes<32>, WeightProposal>;
+
+// Tracks (proposal_id, governor) pairs — prevents double-voting
+// Key = persistentHash([proposal_id, governor_key])
+export ledger vote_cast:          Map<Bytes<32>, Boolean>;
+
+// Latest approved weights — consumed off-chain by credit_proof and lending_pool
+export ledger approved_weights:   CreditWeights;
+
+witness local_secret_key(): Bytes<32>;
+
+pure circuit derive_gov_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midvault:gov:"), sk]);
+}
+
+// All six weight fields must sum to exactly 100
+pure circuit weights_sum_100(w: CreditWeights): Boolean {
+  const s1 = ((w.income as Uint<64>) + (w.debt        as Uint<64>)) as Uint<64>;
+  const s2 = ((w.payments as Uint<64>) + (w.cashflow  as Uint<64>)) as Uint<64>;
+  const s3 = ((w.utilisation as Uint<64>) + (w.assets as Uint<64>)) as Uint<64>;
+  const s12g  = (s1 + s2) as Uint<64>;
+  const total = (s12g + s3) as Uint<64>;
+  return total == 100;
+}
+
+export circuit propose_weight_update(
+  new_income:      Uint<8>,
+  new_debt:        Uint<8>,
+  new_payments:    Uint<8>,
+  new_cashflow:    Uint<8>,
+  new_utilisation: Uint<8>,
+  new_assets:      Uint<8>,
+  rationale_hash:  Bytes<32>,
+): Bytes<32> {
+  const sk         = local_secret_key();
+  const governor   = derive_gov_key(sk);
+  const d_governor = disclose(governor);
+  assert(governors.member(d_governor), "Not a governor");
+
+  const w = CreditWeights {
+    income:      disclose(new_income),
+    debt:        disclose(new_debt),
+    payments:    disclose(new_payments),
+    cashflow:    disclose(new_cashflow),
+    utilisation: disclose(new_utilisation),
+    assets:      disclose(new_assets),
+  };
+
+  assert(weights_sum_100(w), "Weights must sum to 100");
+
+  const d_hash = disclose(rationale_hash);
+
+  // Unique proposal ID derived from the weight fields and rationale
+  const wi = w.income      as Uint<64>;
+  const wd = w.debt        as Uint<64>;
+  const wp = w.payments    as Uint<64>;
+  const wc = w.cashflow    as Uint<64>;
+  const wu = w.utilisation as Uint<64>;
+  const wa = w.assets      as Uint<64>;
+  const wh = persistentHash<Vector<6, Uint<64>>>([wi, wd, wp, wc, wu, wa]);
+  const proposal_id = persistentHash<Vector<2, Bytes<32>>>([wh, d_hash]);
+
+  proposals.insert(proposal_id, WeightProposal {
+    new_weights:    w,
+    rationale_hash: d_hash,
+    approval_count: 0 as Uint<8>,
+    executed:       false,
+  });
+
+  return proposal_id;
+}
+
+export circuit approve_proposal(proposal_id: Bytes<32>): [] {
+  const sk         = local_secret_key();
+  const governor   = derive_gov_key(sk);
+  const d_governor = disclose(governor);
+  assert(governors.member(d_governor), "Not a governor");
+
+  const d_pid = disclose(proposal_id);
+  assert(proposals.member(d_pid), "Proposal not found");
+
+  const proposal = proposals.lookup(d_pid);
+  assert(!proposal.executed, "Already executed");
+
+  // Prevent double-voting with a compound key
+  const vote_key = persistentHash<Vector<2, Bytes<32>>>([d_pid, d_governor]);
+  assert(!vote_cast.member(vote_key), "Already voted");
+  vote_cast.insert(vote_key, true);
+
+  const new_count = (proposal.approval_count + 1) as Uint<8>;
+
+  if (new_count >= multisig_threshold) {
+    approved_weights = proposal.new_weights;
+    proposals.insert(d_pid, WeightProposal {
+      new_weights:    proposal.new_weights,
+      rationale_hash: proposal.rationale_hash,
+      approval_count: new_count,
+      executed:       true,
+    });
+  } else {
+    proposals.insert(d_pid, WeightProposal {
+      new_weights:    proposal.new_weights,
+      rationale_hash: proposal.rationale_hash,
+      approval_count: new_count,
+      executed:       false,
+    });
+  }
+}
