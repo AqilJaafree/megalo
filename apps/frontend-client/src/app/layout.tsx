@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Midvault',
+  title: 'Megalo',
   description: 'Privacy-preserving TradFi lending on Midnight',
 };
 

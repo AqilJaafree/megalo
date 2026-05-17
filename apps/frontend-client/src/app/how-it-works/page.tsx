@@ -153,7 +153,7 @@ export default function HowItWorksPage() {
             Privacy-preserving by design
         
           </div>
-          <h1 className="text-4xl sm:text-5xl font-bold mb-4">How Midvault Works</h1>
+          <h1 className="text-4xl sm:text-5xl font-bold mb-4">How Megalo Works</h1>
           <p className="text-white/50 text-lg max-w-xl mx-auto leading-relaxed">
             Two roles, one protocol. Your data never leaves your device.
           </p>

@@ -14,7 +14,7 @@ export default function Navbar() {
               <path d="M9 6V12M6 7.5L9 6L12 7.5" stroke="#120F17" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <span className="text-lg font-semibold tracking-tight">Midvault</span>
+          <span className="text-lg font-semibold tracking-tight">Megalo</span>
         </Link>
 
         <Link
