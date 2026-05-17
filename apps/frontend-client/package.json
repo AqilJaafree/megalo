@@ -8,5 +8,21 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@midnight-ntwrk/compact-runtime": "^0.16.0",
+    "@midnight-ntwrk/midnight-js-network-id": "^4.0.4",
+    "next": "^15.1.0",
+    "plaid": "^29.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-plaid-link": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
   }
 }
