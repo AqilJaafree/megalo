@@ -1,0 +1,28 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# build outputs
+dist
+build
+artifacts
+.next
+out
+
+# turbo
+.turbo
+
+# env
+.env
+.env.local
+.env.*.local
+
+# misc
+.DS_Store
+*.pem
+*.log
+
+#.claude
+.claude
+.claude-plugin
