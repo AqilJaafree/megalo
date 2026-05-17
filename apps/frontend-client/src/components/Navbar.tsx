@@ -2,8 +2,20 @@
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { useLaceWallet } from '@/lib/use-lace-wallet';
 
 export default function Navbar() {
+  const { connection, connect, disconnect } = useLaceWallet();
+
+  const isConnected = connection.status === 'connected';
+  const isConnecting = connection.status === 'connecting';
+  const notInstalled = connection.status === 'not_installed';
+
+  function shortAddress(addr: string) {
+    if (addr.length <= 12) return addr;
+    return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+  }
+
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-20 flex items-center justify-between px-8 border-b border-[#7b8866]/20 backdrop-blur-md bg-[#120F17]/70">
       <div className="flex items-center gap-10">
@@ -14,7 +26,7 @@ export default function Navbar() {
               <path d="M9 6V12M6 7.5L9 6L12 7.5" stroke="#120F17" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <span className="text-lg font-semibold tracking-tight">Megalo</span>
+          <span className="text-lg font-semibold tracking-tight">Midvault</span>
         </Link>
 
         <Link
@@ -23,11 +35,36 @@ export default function Navbar() {
         >
           How it works
         </Link>
+        <Link
+          href="/lender/dashboard"
+          className="text-sm font-bold text-[#7b8866] hover:text-white transition-colors duration-200"
+        >
+          Lender
+        </Link>
       </div>
 
-      <Button variant="outline" size="sm">
-        Connect Wallet
-      </Button>
+      <div className="flex items-center gap-3">
+        {connection.status === 'error' && (
+          <span className="text-xs text-red-400">{connection.message}</span>
+        )}
+        {notInstalled && (
+          <span className="text-xs text-amber-400">Lace wallet not detected</span>
+        )}
+        {isConnected && connection.status === 'connected' && (
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span className="text-xs text-[#7b8866] font-mono">{shortAddress(connection.address)}</span>
+          </div>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={isConnected ? disconnect : connect}
+          disabled={isConnecting}
+        >
+          {isConnecting ? 'Connecting…' : isConnected ? 'Disconnect' : 'Connect Lace'}
+        </Button>
+      </div>
     </nav>
   );
 }

@@ -1,4 +1,4 @@
-# Midvault
+# Megalo
 
 Privacy-preserving TradFi lending protocol built on the [Midnight](https://midnight.network) blockchain.
 

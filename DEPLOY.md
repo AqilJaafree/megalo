@@ -1,4 +1,4 @@
-# Midvault — Local Deployment Guide
+# Megalo — Local Deployment Guide
 
 Deploys all 4 Compact contracts (`credit_proof`, `asset_proof`, `lending_pool`, `governance`) to a local Midnight network running in Docker.
 
@@ -74,7 +74,7 @@ The script:
 ### Expected output
 
 ```
-Midvault — deploying to local Midnight network
+Megalo — deploying to local Midnight network
   Indexer:      http://127.0.0.1:8088/api/v4/graphql
   Node:         ws://127.0.0.1:9944
   Proof server: http://127.0.0.1:6300

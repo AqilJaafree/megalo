@@ -1,18 +1,28 @@
 export interface MidnightConfig {
-  networkId: 'testnet' | 'mainnet';
-  rpcUrl: string;
+  networkId: 'undeployed' | 'testnet' | 'mainnet';
+  indexerUrl: string;
+  indexerWsUrl: string;
+  nodeUrl: string;
   proofServerUrl: string;
 }
 
 export const MIDNIGHT_CONFIG: MidnightConfig = {
-  networkId: (process.env.MIDNIGHT_NETWORK_ID ?? 'testnet') as 'testnet' | 'mainnet',
-  rpcUrl: process.env.MIDNIGHT_RPC_URL!,
-  proofServerUrl: process.env.MIDNIGHT_PROOF_SERVER_URL!,
+  networkId: (process.env.MIDNIGHT_NETWORK_ID ?? 'undeployed') as MidnightConfig['networkId'],
+  indexerUrl: process.env.MIDNIGHT_INDEXER_URL ?? 'http://127.0.0.1:8088/api/v4/graphql',
+  indexerWsUrl: (process.env.MIDNIGHT_INDEXER_URL ?? 'http://127.0.0.1:8088/api/v4/graphql')
+    .replace('http://', 'ws://')
+    .replace('https://', 'wss://') + '/ws',
+  nodeUrl: process.env.MIDNIGHT_RPC_URL
+    ? process.env.MIDNIGHT_RPC_URL.replace('http://', 'ws://').replace('https://', 'wss://')
+    : 'ws://127.0.0.1:9944',
+  proofServerUrl: process.env.MIDNIGHT_PROOF_SERVER_URL ?? 'http://127.0.0.1:6300',
 };
 
 export const CONTRACT_ADDRESSES = {
-  lendingPool: process.env.LENDING_POOL_ADDRESS! as `0x${string}`,
-  governance: process.env.GOVERNANCE_ADDRESS! as `0x${string}`,
+  lendingPool: process.env.LENDING_POOL_ADDRESS ?? '',
+  governance:  process.env.GOVERNANCE_ADDRESS ?? '',
+  creditProof: process.env.CREDIT_PROOF_ADDRESS ?? '',
+  assetProof:  process.env.ASSET_PROOF_ADDRESS ?? '',
 };
 
 export const ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
